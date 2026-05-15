@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 300px; font-family: system-ui; background: #1a1a1a; color: #eee; margin: 0; padding: 16px; }
+  h3 { margin: 0 0 16px; color: #f5a623; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .section { margin-bottom: 16px; }
+  .label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 8px; }
+  .option { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #2a2a2a; border-radius: 8px; margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
+  .option:hover { background: #333; }
+  .option.active { border-color: #f5a623; }
+  .option-title { font-size: 13px; }
+  .option-desc { font-size: 11px; color: #888; margin-top: 2px; }
+  .radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #555; flex-shrink: 0; transition: .2s; }
+  .radio.checked { border-color: #f5a623; background: #f5a623; }
+  .divider { height: 1px; background: #333; margin: 14px 0; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #2a2a2a; border-radius: 8px; }
+  .toggle { position: relative; width: 36px; height: 20px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #444; border-radius: 20px; cursor: pointer; transition: .2s; }
+  .slider:before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; }
+  input:checked + .slider { background: #f5a623; }
+  input:checked + .slider:before { transform: translateX(16px); }
+  .status { font-size: 11px; color: #4caf50; text-align: center; margin-top: 12px; }
+  .sc-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #2a2a2a; border-radius: 8px; margin-bottom: 6px; cursor: pointer; border: 1px solid transparent; }
+  .sc-row:hover { background: #333; }
+  .sc-row.active { border-color: #f5a623; }
+  kbd { background: #333; border: 1px solid #555; border-radius: 4px; padding: 2px 6px; font-size: 11px; color: #f5a623; font-family: monospace; }
+  .hint { font-size: 11px; color: #555; margin-top: 6px; padding: 0 4px; }
+</style>
+</head>
+<body>
+
+<h3>🛡️ PromptGuard <span style="font-size:11px;color:#888;font-weight:400">v2.0.0</span></h3>
+
+<div class="section">
+  <div class="label">Режим роботи</div>
+  <div class="option" id="opt-modal">
+    <div>
+      <div class="option-title">Показувати вікно</div>
+      <div class="option-desc">Підтвердити перед відправкою</div>
+    </div>
+    <div class="radio" id="radio-modal"></div>
+  </div>
+  <div class="option" id="opt-auto">
+    <div>
+      <div class="option-title">Авто-заміна</div>
+      <div class="option-desc">Замінити PII без підтвердження</div>
+    </div>
+    <div class="radio" id="radio-auto"></div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="label">Bypass клавіша</div>
+  <div id="shortcut-section"></div>
+  <div class="hint">Тримай + V щоб вставити без сканування</div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="label">Розширення</div>
+  <div class="toggle-row">
+    <span style="font-size:13px">Активне</span>
+    <label class="toggle">
+      <input type="checkbox" id="enabled-toggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+</div>
+
+<div class="status" id="status"></div>
+
+<script src="popup.js"></script>
+</body>
+</html>

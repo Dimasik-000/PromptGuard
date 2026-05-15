@@ -1,11 +1,25 @@
 {
   "manifest_version": 3,
   "name": "PromptGuard",
-  "version": "0.1.0",
+  "version": "2.0.0",
+  "description": "Local PII redaction for AI chats",
   "permissions": ["offscreen", "storage", "activeTab"],
   "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "content_scripts": [{ "matches": ["https://claude.ai/*", "https://chatgpt.com/*"], "js": ["content.js"], "run_at": "document_idle" }],
-  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-  "web_accessible_resources": [{ "resources": ["transformers/*", "models/**/*", "offscreen.html"], "matches": ["<all_urls>"] }]
+  "content_scripts": [{
+    "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PromptGuard"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "web_accessible_resources": [{
+    "resources": ["transformers/*", "models/**/*", "offscreen.html"],
+    "matches": ["<all_urls>"]
+  }]
 }

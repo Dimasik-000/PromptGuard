@@ -1,4 +1,19 @@
-console.log('[PromptGuard] loaded');
+console.log('[PromptGuard] loaded v2.0.0');
+
+let settings = { mode: 'modal', enabled: true, shortcut: 'shift' };
+
+chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift' }, (s) => {
+  settings = s;
+  console.log('[PromptGuard] settings:', settings);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'sync') return;
+  for (const key in changes) {
+    settings[key] = changes[key].newValue;
+    console.log('[PromptGuard] updated:', key, '->', changes[key].newValue);
+  }
+});
 
 let lastInput = null;
 document.addEventListener('focusin', (e) => {
@@ -7,18 +22,41 @@ document.addEventListener('focusin', (e) => {
   }
 });
 
-document.addEventListener('paste', async (e) => {
+document.addEventListener('paste', (e) => {
+  const bypassMap = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey };
+  if ((e.metaKey || e.ctrlKey) && bypassMap[settings.shortcut]) {
+    console.log('[PromptGuard] bypass');
+    return;
+  }
+
   const text = e.clipboardData?.getData('text');
   if (!text || text.length < 3) return;
 
+  if (!settings.enabled) {
+    console.log('[PromptGuard] disabled');
+    return;
+  }
+
   const spans = regexScan(text);
-  if (spans.length === 0) return;
+  if (spans.length === 0) {
+    console.log('[PromptGuard] no PII');
+    return;
+  }
 
   e.preventDefault();
   e.stopPropagation();
 
   const targetEl = lastInput || document.activeElement;
-  showModal(text, redact(text, spans), spans, targetEl);
+  const redacted = redact(text, spans);
+
+  console.log('[PromptGuard] mode:', settings.mode, 'spans:', spans.length);
+
+  if (settings.mode === 'auto') {
+    insert(redacted, targetEl);
+    showToast(`🛡️ ${spans.length} PII замінено`);
+  } else {
+    showModal(text, redacted, spans, targetEl);
+  }
 }, true);
 
 function regexScan(text) {
@@ -52,7 +90,6 @@ function redact(text, spans) {
 function insert(text, el) {
   el = el || document.activeElement;
   if (!el) return;
-
   if (el.isContentEditable) {
     el.focus();
     const range = document.createRange();
@@ -72,9 +109,16 @@ function insert(text, el) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
-
   el.value = text;
   el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a1a1a;color:#f5a623;padding:10px 18px;border-radius:10px;font-family:system-ui;font-size:13px;z-index:2147483647;border:1px solid #f5a623;box-shadow:0 4px 20px rgba(0,0,0,.4);';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
 }
 
 function showModal(original, redacted, spans, targetEl) {
@@ -89,6 +133,7 @@ function showModal(original, redacted, spans, targetEl) {
     .lbl{color:#888;font-size:11px;margin-bottom:4px;text-transform:uppercase}
     .txt{background:#2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;word-break:break-word;max-height:150px;overflow-y:auto}
     .hi{color:#f5a623;font-weight:bold}
+    .hint{font-size:11px;color:#555;text-align:right;margin-top:-10px;margin-bottom:10px}
     .btns{display:flex;gap:8px;justify-content:flex-end}
     button{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}
     .ok{background:#f5a623;color:#000}
@@ -101,13 +146,13 @@ function showModal(original, redacted, spans, targetEl) {
     <div class="txt">${hl(redacted)}</div>
     <div class="lbl">Оригінал:</div>
     <div class="txt">${esc(original)}</div>
+    <div class="hint">⌘ Shift+V — вставити без сканування</div>
     <div class="btns">
       <button class="cancel">Скасувати</button>
       <button class="orig">Оригінал</button>
       <button class="ok">✓ Відправити без PII</button>
     </div>
   </div></div>`;
-
   s.querySelector('.ok').onclick = () => { root.remove(); insert(redacted, targetEl); };
   s.querySelector('.orig').onclick = () => { root.remove(); insert(original, targetEl); };
   s.querySelector('.cancel').onclick = () => root.remove();

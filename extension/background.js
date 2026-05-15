@@ -1,10 +1,9 @@
-console.log('[BG] Background script started');
+console.log('[BG] started v2.0.0');
 
 let created = false;
 
 async function ensureOffscreen() {
   if (created) return;
-  console.log('[BG] Creating offscreen...');
   try {
     await chrome.offscreen.createDocument({
       url: chrome.runtime.getURL('offscreen.html'),
@@ -12,26 +11,34 @@ async function ensureOffscreen() {
       justification: 'NER inference'
     });
     created = true;
-    console.log('[BG] Offscreen created OK');
   } catch (e) {
-    console.error('[BG] Offscreen error:', e);
     created = true;
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
-  console.log('[BG] Message received:', msg.type);
+  // Отримати налаштування
+  if (msg.type === 'GET_SETTINGS') {
+    chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift' }, respond);
+    return true;
+  }
+
+  // Скан PII
   if (msg.type === 'SCAN') {
     ensureOffscreen().then(() => {
-      console.log('[BG] Forwarding to offscreen...');
-      chrome.runtime.sendMessage(
-        { ...msg, target: 'offscreen' },
-        (result) => {
-          console.log('[BG] Offscreen responded:', result);
-          respond(result);
-        }
-      );
+      chrome.runtime.sendMessage({ ...msg, target: 'offscreen' }, respond);
     });
     return true;
   }
+});
+
+// При зміні налаштувань — повідомити всі вкладки
+chrome.storage.onChanged.addListener((changes) => {
+  chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift' }, (settings) => {
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', settings }).catch(() => {});
+      });
+    });
+  });
 });
