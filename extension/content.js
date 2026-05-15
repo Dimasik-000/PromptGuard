@@ -1,5 +1,12 @@
 console.log('[PromptGuard] loaded');
 
+let lastInput = null;
+document.addEventListener('focusin', (e) => {
+  if (e.target.isContentEditable || e.target.tagName === 'TEXTAREA') {
+    lastInput = e.target;
+  }
+});
+
 document.addEventListener('paste', async (e) => {
   const text = e.clipboardData?.getData('text');
   if (!text || text.length < 3) return;
@@ -9,7 +16,9 @@ document.addEventListener('paste', async (e) => {
 
   e.preventDefault();
   e.stopPropagation();
-  showModal(text, redact(text, spans), spans);
+
+  const targetEl = lastInput || document.activeElement;
+  showModal(text, redact(text, spans), spans, targetEl);
 }, true);
 
 function regexScan(text) {
@@ -40,23 +49,18 @@ function redact(text, spans) {
   return out + text.slice(i);
 }
 
-function insert(text) {
-  const el = document.activeElement;
+function insert(text, el) {
+  el = el || document.activeElement;
   if (!el) return;
 
   if (el.isContentEditable) {
-    // Очистити поточний вміст і вставити новий
     el.focus();
-    
-    // Виділити все і замінити
     const range = document.createRange();
     range.selectNodeContents(el);
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
     sel.deleteFromDocument();
-    
-    // Вставити redacted текст
     const node = document.createTextNode(text);
     const range2 = document.createRange();
     range2.setStart(el, 0);
@@ -65,7 +69,6 @@ function insert(text) {
     sel.addRange(range2);
     range2.insertNode(node);
     sel.collapseToEnd();
-    
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
@@ -74,7 +77,7 @@ function insert(text) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function showModal(original, redacted, spans) {
+function showModal(original, redacted, spans, targetEl) {
   document.getElementById('pg-root')?.remove();
   const root = document.createElement('div');
   root.id = 'pg-root';
@@ -104,11 +107,12 @@ function showModal(original, redacted, spans) {
       <button class="ok">✓ Відправити без PII</button>
     </div>
   </div></div>`;
-  s.querySelector('.ok').onclick = () => { root.remove(); insert(redacted); };
-  s.querySelector('.orig').onclick = () => { root.remove(); insert(original); };
+
+  s.querySelector('.ok').onclick = () => { root.remove(); insert(redacted, targetEl); };
+  s.querySelector('.orig').onclick = () => { root.remove(); insert(original, targetEl); };
   s.querySelector('.cancel').onclick = () => root.remove();
   document.body.appendChild(root);
 }
 
-function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function hl(t){ return esc(t).replace(/\[REDACTED_\w+\]/g, m=>`<span class="hi">${m}</span>`); }
+function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function hl(t) { return esc(t).replace(/\[REDACTED_\w+\]/g, m => `<span class="hi">${m}</span>`); }
