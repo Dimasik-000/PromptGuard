@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+*.log
+coverage/
+dist/
+build/
+.env
+.env.*
+
+# Downloaded model weights are kept local only.
+models/**/onnx/
+*.onnx
