@@ -9,4 +9,5 @@ build/
 
 # Downloaded model weights are kept local only.
 models/**/onnx/
-*.onnx
+*.onnx.*
+extension.pem
