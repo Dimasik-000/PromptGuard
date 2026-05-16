@@ -5,7 +5,6 @@ const MODAL_STRINGS = {
     pasteTitle:   'знайдено',
     piiLabel:     'PII',
     chipsLabel:   'Знахідки — клікни щоб залишити оригінал:',
-    phonePolicyHint: 'Перші 2 телефони залишаються без змін',
     willSend:     'Буде відправлено:',
     editHint:     'редагуйте за потреби',
     originalLabel:'Оригінал:',
@@ -32,7 +31,6 @@ const MODAL_STRINGS = {
     pasteTitle:   'found',
     piiLabel:     'PII',
     chipsLabel:   'Findings — click to keep original:',
-    phonePolicyHint: 'First 2 phone numbers stay unchanged',
     willSend:     'Will be sent:',
     editHint:     'edit if needed',
     originalLabel:'Original:',
@@ -57,78 +55,45 @@ const MODAL_STRINGS = {
   },
 };
 
-function mt() { return MODAL_STRINGS[settings?.lang] || MODAL_STRINGS[DEFAULT_LANG]; }
+function mt() { return MODAL_STRINGS[settings.lang] || MODAL_STRINGS.uk; }
 
-// Force English UI by default to ensure consistent experience across pages
-const DEFAULT_LANG = 'en';
+let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: 'uk' };
 
-let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG };
-
-chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG }, (s) => {
+chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: 'uk' }, (s) => {
   settings = s;
-  // Force UI language to DEFAULT_LANG to ensure consistent English strings
-  settings.lang = DEFAULT_LANG;
   console.log('[PromptGuard] settings:', settings);
   if (settings.pageReplace) applyPageReplace();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
-  for (const key in changes) {
-    settings[key] = changes[key].newValue;
-    console.log('[PromptGuard] updated:', key, '->', changes[key].newValue);
-  }
+  for (const key in changes) settings[key] = changes[key].newValue;
   if (changes.pageReplace?.newValue) applyPageReplace();
 });
 
 let lastInput = null;
 document.addEventListener('focusin', (e) => {
-  const t = e.target;
-  if (!t) return;
-  try {
-    if (t.nodeType === 1 && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || (t.getAttribute && (t.getAttribute('role') === 'textbox' || (t.matches && t.matches('[contenteditable], [role="textbox"], textarea, input')))))) {
-      lastInput = t;
-    }
-  } catch (err) { /* some nodes may throw on matches(); ignore */ }
+  if (e.target.isContentEditable || e.target.tagName === 'TEXTAREA') {
+    lastInput = e.target;
+  }
 });
 
 document.addEventListener('paste', (e) => {
   const bypassMap = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey };
-  if ((e.metaKey || e.ctrlKey) && bypassMap[settings.shortcut]) {
-    console.log('[PromptGuard] bypass');
-    return;
-  }
+  if ((e.metaKey || e.ctrlKey) && bypassMap[settings.shortcut]) return;
 
   const text = e.clipboardData?.getData('text');
   if (!text || text.length < 3) return;
+  if (!settings.enabled) return;
 
-  if (!settings.enabled) {
-    console.log('[PromptGuard] disabled');
-    return;
-  }
-
-  const spans = markPreservedPhones(regexScan(text));
-  const redactableCount = spans.filter(s => !s.preserve).length;
-  if (redactableCount === 0) {
-    console.log('[PromptGuard] no PII');
-    return;
-  }
+  const spans = regexScan(text);
+  if (!spans.length) return;
 
   e.preventDefault();
   e.stopPropagation();
 
-  // Prefer the event's composed path to find the actual editable element (works with shadow DOM)
-  const path = (e.composedPath && e.composedPath()) || [];
-  const pathEditable = path.find(n => {
-    if (!n || n.nodeType !== 1) return false;
-    try {
-      return n.isContentEditable || n.tagName === 'TEXTAREA' || n.tagName === 'INPUT' || (n.getAttribute && (n.getAttribute('role') === 'textbox' || (n.matches && n.matches('[contenteditable], [role="textbox"], textarea, input'))));
-    } catch (err) { return false; }
-  });
-  const targetEl = pathEditable || lastInput || document.activeElement;
+  const targetEl = lastInput || document.activeElement;
   const redacted = redact(text, spans);
-
-  console.log('[PromptGuard] mode:', settings.mode, 'spans:', spans.length);
 
   if (settings.mode === 'auto') {
     insert(redacted, targetEl);
@@ -139,7 +104,7 @@ document.addEventListener('paste', (e) => {
   }
 }, true);
 
-// ── Send-time scan (auto + modal mode: also scan text typed manually) ────────
+// ── Send-time scan (intercept Enter to check typed text) ─────────────────────
 let pgSending = false;
 
 function fireEnter(el) {
@@ -164,9 +129,8 @@ document.addEventListener('keydown', (e) => {
   const raw = el.isContentEditable ? (el.innerText || el.textContent || '') : el.value;
   if (raw.trim().length < 3) return;
 
-  const spans = markPreservedPhones(regexScan(raw));
-  const redactableCount = spans.filter(s => !s.preserve).length;
-  if (!redactableCount) return;
+  const spans = regexScan(raw);
+  if (!spans.length) return;
 
   e.preventDefault();
   e.stopImmediatePropagation();
@@ -186,10 +150,9 @@ document.addEventListener('keydown', (e) => {
 function regexScan(text) {
   const spans = [];
   const rules = [
-    [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],   // CC before PHONE so it wins on equal-length matches
+    [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],
     [/[\w.+-]+@[\w-]+\.[a-z]{2,}/gi, 'EMAIL'],
-    [/(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}?\s+\d+[A-Za-zА-Яа-я]?(?=[,.;:]|\s|$)/gi, 'ADDRESS'],
-    [/\+?[\d\s\-() ]{7,15}\d/g, 'PHONE'],
+    [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
     [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
     [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
     [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'IP'],
@@ -200,7 +163,6 @@ function regexScan(text) {
     while ((m = re.exec(text)) !== null)
       spans.push({ start: m.index, end: m.index + m[0].length, type });
   }
-  // Sort by start; on overlap keep the longer match (CC beats PHONE, etc.)
   spans.sort((a, b) => a.start - b.start);
   return spans.reduce((acc, s) => {
     if (!acc.length) { acc.push(s); return acc; }
@@ -211,25 +173,9 @@ function regexScan(text) {
   }, []);
 }
 
-function markPreservedPhones(spans, keep = 2) {
-  let kept = 0;
-  return spans.map(s => {
-    if (s.type === 'PHONE' && kept < keep) {
-      kept += 1;
-      return { ...s, preserve: true };
-    }
-    return s;
-  });
-}
-
 function redact(text, spans) {
   let out = '', i = 0;
   for (const s of spans) {
-    if (s.preserve) {
-      out += text.slice(i, s.end);
-      i = s.end;
-      continue;
-    }
     out += text.slice(i, s.start) + `[REDACTED_${s.type}]`;
     i = s.end;
   }
@@ -241,9 +187,9 @@ function insert(text, el) {
   if (!el) return;
   if (el.isContentEditable) {
     el.focus();
+    const sel = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(el);
-    const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
     sel.deleteFromDocument();
@@ -277,7 +223,8 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   const sh = root.attachShadow({ mode: 'open' });
   const T = mt();
 
-  const chipState = spans.map(s => !s.preserve); // true = redact, false = keep original
+  // All spans start as "redact" (on). User can click to keep original.
+  const chipState = spans.map(() => true);
 
   function maskChip(v) {
     if (v.length <= 4) return '***';
@@ -324,8 +271,8 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<h3>🛡️ PromptGuard — ${T.pasteTitle} ${spans.length} ${T.piiLabel}</h3>` +
-    `<div class="lbl">${T.chipsLabel} <span class="lbl-hint">${T.phonePolicyHint}</span></div>` +
+    `<h3>&#x1F6E1;&#xFE0F; PromptGuard &#x2014; ${T.pasteTitle} ${spans.length} ${T.piiLabel}</h3>` +
+    `<div class="lbl">${T.chipsLabel}</div>` +
     `<div class="chips">${chips}</div>` +
     `<div class="lbl">${T.willSend} <span class="lbl-hint">${T.editHint}</span></div>` +
     `<textarea class="edit">${esc(buildText())}</textarea>` +
@@ -350,8 +297,7 @@ function showModal(original, redacted, spans, targetEl, onSend) {
 
   sh.querySelector('.ok').onclick = () => {
     const text = sh.querySelector('.edit').value;
-    const redactedCount = chipState.filter(Boolean).length;
-    trackStats(redactedCount, 'paste', spans.filter((_, i) => chipState[i]).map(sp => sp.type));
+    trackStats(chipState.filter(Boolean).length, 'paste', spans.filter((_, i) => chipState[i]).map(sp => sp.type));
     root.remove();
     insert(text, targetEl);
     if (onSend) onSend();
@@ -362,8 +308,7 @@ function showModal(original, redacted, spans, targetEl, onSend) {
     if (onSend) onSend();
   };
   sh.querySelector('.cancel').onclick = () => root.remove();
-  // Some pages (ChatGPT) use complex DOM; append to documentElement if body isn't accepting overlays
-  try { document.body.appendChild(root); } catch (e) { document.documentElement.appendChild(root); }
+  document.body.appendChild(root);
 }
 
 function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -392,21 +337,18 @@ function applyPageReplace() {
   let total = 0, node;
   const batch = [];
   while ((node = walker.nextNode())) {
-    const spans = markPreservedPhones(regexScan(node.textContent));
+    const spans = regexScan(node.textContent);
     if (spans.length) batch.push({ node, spans });
   }
   for (const { node, spans } of batch) {
     node.textContent = redact(node.textContent, spans);
     total += spans.length;
   }
-  if (total) showToast(`🛡️ ${mt().toastPage} ${total} ${mt().piiLabel}`);
+  if (total) showToast(`\u{1F6E1}️ ${mt().toastPage} ${total} ${mt().piiLabel}`);
 }
 
-// ── Сканування документів ──────────────────────────────────────────────────
+// ── Document scanning ─────────────────────────────────────────────────────────
 
-// Inject page-level interceptor into Claude/ChatGPT page context.
-// inject.js overrides FileReader + showOpenFilePicker in the page JS environment
-// and sends __PG_FILE__ via postMessage when a PDF/DOCX/TXT is read.
 (function () {
   const s = document.createElement('script');
   s.src = chrome.runtime.getURL('inject.js');
@@ -414,7 +356,6 @@ function applyPageReplace() {
   s.onload = () => s.remove();
 })();
 
-// Receive intercepted files from inject.js
 window.addEventListener('message', (e) => {
   if (e.source !== window || e.data?.type !== '__PG_FILE__') return;
   if (!settings.enabled || (!settings.docRegex && !settings.docAi)) return;
@@ -423,7 +364,7 @@ window.addEventListener('message', (e) => {
 });
 
 function scanDoc(fileName, ext, b64) {
-  const toast = makeStickyToast(`🔍 ${fileName}…`);
+  const toast = makeStickyToast(`\u{1F50D} ${fileName}…`);
   chrome.runtime.sendMessage(
     {
       type: 'SCAN_DOC',
@@ -470,8 +411,7 @@ function showDocModal(fileName, matches, redactedText) {
   const more = matches.length > 30
     ? `<div class="more">… ${T.moreFindings} ${matches.length - 30} ${T.findings}</div>` : '';
 
-  const dlBtn = redactedText
-    ? `<button class="dl">${T.download}</button>` : '';
+  const dlBtn = redactedText ? `<button class="dl">${T.download}</button>` : '';
 
   const st = document.createElement('style');
   st.textContent =
@@ -496,8 +436,8 @@ function showDocModal(fileName, matches, redactedText) {
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<div><h3>🛡️ ${T.docTitle} ${matches.length} ${T.docPii}</h3>` +
-    `<div class="fname">📄 ${esc(fileName)}</div></div>` +
+    `<div><h3>&#x1F6E1;&#xFE0F; ${T.docTitle} ${matches.length} ${T.docPii}</h3>` +
+    `<div class="fname">&#x1F4C4; ${esc(fileName)}</div></div>` +
     `<div class="list">` +
     `<div class="hdr"><span>${T.colLevel}</span><span>${T.colType}</span><span>${T.colValue}</span></div>` +
     `${rows}${more}</div>` +
@@ -512,7 +452,10 @@ function showDocModal(fileName, matches, redactedText) {
     sh.querySelector('.dl').onclick = () => {
       const blob = new Blob([redactedText], { type: 'text/plain;charset=utf-8' });
       const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), { href: url, download: fileName.replace(/\.(pdf|docx)$/i, '_redacted.txt') });
+      const a    = Object.assign(document.createElement('a'), {
+        href: url,
+        download: fileName.replace(/\.(pdf|docx)$/i, '_redacted.txt'),
+      });
       a.click();
       URL.revokeObjectURL(url);
     };

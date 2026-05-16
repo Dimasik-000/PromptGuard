@@ -17,7 +17,7 @@
   "content_scripts": [{
     "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
     "js": ["content.js"],
-    "run_at": "document_idle"
+    "run_at": "document_start"
   }],
   "action": {
     "default_popup": "popup.html",

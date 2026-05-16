@@ -71496,11 +71496,6 @@ function merge(spans) {
 function redact(text, spans) {
   let out = "", i = 0;
   for (const s of spans) {
-    if (s.preserve) {
-      out += text.slice(i, s.end);
-      i = s.end;
-      continue;
-    }
     out += text.slice(i, s.start) + `[REDACTED_${s.type}]`;
     i = s.end;
   }
