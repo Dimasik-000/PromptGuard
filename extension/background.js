@@ -23,10 +23,20 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
 
-  // Скан PII
+  // Скан PII (текст)
   if (msg.type === 'SCAN') {
     ensureOffscreen().then(() => {
       chrome.runtime.sendMessage({ ...msg, target: 'offscreen' }, respond);
+    });
+    return true;
+  }
+
+  // Скан документу (PDF / DOCX / TXT)
+  if (msg.type === 'SCAN_DOC') {
+    ensureOffscreen().then(() => {
+      chrome.storage.local.get({ anthropicKey: '' }, (local) => {
+        chrome.runtime.sendMessage({ ...msg, target: 'offscreen', apiKey: local.anthropicKey }, respond);
+      });
     });
     return true;
   }

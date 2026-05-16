@@ -7,7 +7,6 @@ build/
 .env
 .env.*
 
-# Downloaded model weights are kept local only.
 models/**/onnx/
 *.onnx.*
 extension.pem

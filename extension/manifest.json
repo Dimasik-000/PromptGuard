@@ -19,7 +19,7 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "web_accessible_resources": [{
-    "resources": ["transformers/*", "models/**/*", "offscreen.html"],
+    "resources": ["transformers/*", "models/**/*", "offscreen.html", "inject.js"],
     "matches": ["<all_urls>"]
   }]
 }

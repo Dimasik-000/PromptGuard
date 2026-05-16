@@ -28,6 +28,18 @@
   .sc-row.active { border-color: #f5a623; }
   kbd { background: #333; border: 1px solid #555; border-radius: 4px; padding: 2px 6px; font-size: 11px; color: #f5a623; font-family: monospace; }
   .hint { font-size: 11px; color: #555; margin-top: 6px; padding: 0 4px; }
+  .doc-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #2a2a2a; border-radius: 8px; margin-bottom: 6px; }
+  .doc-row:last-child { margin-bottom: 0; }
+  .doc-row .option-title { font-size: 13px; }
+  .doc-row .option-desc { font-size: 11px; color: #888; margin-top: 2px; }
+  .doc-row .badge { font-size: 10px; background: #2d2000; color: #f5a623; border: 1px solid #f5a62344; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .beta { font-size: 9px; background: #1a1a2e; color: #8888ff; border: 1px solid #8888ff44; border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; letter-spacing: .03em; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-box { background: #2a2a2a; border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 700; color: #f5a623; line-height: 1; }
+  .stat-lbl { font-size: 10px; color: #666; margin-top: 3px; }
+  .tip-box { background: #141200; border: 1px solid #f5a62322; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #888; line-height: 1.55; margin-top: 0; }
+  .tip-box strong { color: #f5a623; display: block; margin-bottom: 4px; font-size: 10px; letter-spacing: .05em; }
 </style>
 </head>
 <body>
@@ -63,6 +75,56 @@
 <div class="divider"></div>
 
 <div class="section">
+  <div class="label">Документи <span style="font-size:10px;color:#555">PDF / DOCX</span></div>
+
+  <div class="doc-row">
+    <div>
+      <div class="option-title">Виявлення чутливих даних<span class="badge">Regex</span></div>
+      <div class="option-desc">Швидке сканування за шаблонами (email, телефон, ІПН…)</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="doc-regex-toggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="doc-row">
+    <div>
+      <div class="option-title">Виявлення чутливих даних<span class="badge">AI</span></div>
+      <div class="option-desc">Глибокий аналіз через Claude API</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="doc-ai-toggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div id="api-key-row" style="display:none;background:#1a1200;border:1px solid #f5a62322;border-radius:8px;padding:10px 12px;margin-bottom:6px">
+    <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Anthropic API Key</div>
+    <div style="display:flex;gap:6px">
+      <input type="password" id="api-key-input" placeholder="sk-ant-…"
+             style="flex:1;background:#2a2a2a;border:1px solid #444;border-radius:6px;padding:6px 10px;color:#eee;font-size:11px;font-family:monospace;outline:none;min-width:0">
+      <button id="api-key-save"
+              style="background:#f5a623;color:#000;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0">OK</button>
+    </div>
+    <div id="api-key-status" style="font-size:10px;color:#555;margin-top:5px;min-height:13px"></div>
+  </div>
+
+  <div class="doc-row">
+    <div>
+      <div class="option-title">Заміна даних в документі</div>
+      <div class="option-desc">Редагувати PII та завантажити очищений файл</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="doc-redact-toggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
   <div class="label">Розширення</div>
   <div class="toggle-row">
     <span style="font-size:13px">Активне</span>
@@ -70,6 +132,47 @@
       <input type="checkbox" id="enabled-toggle">
       <span class="slider"></span>
     </label>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="label">Сторінка <span class="beta">БЕТА</span></div>
+  <div class="toggle-row">
+    <div>
+      <div style="font-size:13px">Замінювати PII на поточному сайті</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">Приховати дані прямо в тексті сторінки</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="page-replace-toggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="label">Статистика</div>
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div class="stat-num" id="stat-paste">—</div>
+      <div class="stat-lbl">PII в текстах</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="stat-doc">—</div>
+      <div class="stat-lbl">PII в документах</div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="tip-box">
+    <strong>💡 ПОРАДА</strong>
+    <span id="ai-tip"></span>
   </div>
 </div>
 
