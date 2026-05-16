@@ -40,25 +40,34 @@
   .stat-lbl { font-size: 10px; color: #666; margin-top: 3px; }
   .tip-box { background: #141200; border: 1px solid #f5a62322; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #888; line-height: 1.55; margin-top: 0; }
   .tip-box strong { color: #f5a623; display: block; margin-bottom: 4px; font-size: 10px; letter-spacing: .05em; }
+  .lang-btn { cursor: pointer; color: #555; padding: 2px 5px; border-radius: 3px; transition: .15s; font-weight: 400; font-size: 11px; }
+  .lang-btn:hover { color: #aaa; }
+  .lang-btn.active { color: #f5a623; }
 </style>
 </head>
 <body>
 
-<h3>🛡️ PromptGuard <span style="font-size:11px;color:#888;font-weight:400">v2.0.0</span></h3>
+<h3>🛡️ PromptGuard <span style="font-size:11px;color:#888;font-weight:400">v2.0.0</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:2px">
+    <span class="lang-btn" id="lang-uk">UK</span>
+    <span style="color:#444;font-size:11px;font-weight:400">|</span>
+    <span class="lang-btn" id="lang-en">EN</span>
+  </div>
+</h3>
 
 <div class="section">
-  <div class="label">Режим роботи</div>
+  <div class="label" data-i18n="modeLabel">Режим роботи</div>
   <div class="option" id="opt-modal">
     <div>
-      <div class="option-title">Показувати вікно</div>
-      <div class="option-desc">Підтвердити перед відправкою</div>
+      <div class="option-title" data-i18n="modeModal">Показувати вікно</div>
+      <div class="option-desc" data-i18n="modeModalDesc">Підтвердити перед відправкою</div>
     </div>
     <div class="radio" id="radio-modal"></div>
   </div>
   <div class="option" id="opt-auto">
     <div>
-      <div class="option-title">Авто-заміна</div>
-      <div class="option-desc">Замінити PII без підтвердження</div>
+      <div class="option-title" data-i18n="modeAuto">Авто-заміна</div>
+      <div class="option-desc" data-i18n="modeAutoDesc">Замінити PII без підтвердження</div>
     </div>
     <div class="radio" id="radio-auto"></div>
   </div>
@@ -67,20 +76,20 @@
 <div class="divider"></div>
 
 <div class="section">
-  <div class="label">Bypass клавіша</div>
+  <div class="label" data-i18n="bypassLabel">Bypass клавіша</div>
   <div id="shortcut-section"></div>
-  <div class="hint">Тримай + V щоб вставити без сканування</div>
+  <div class="hint" data-i18n="bypassHint">Тримай + V щоб вставити без сканування</div>
 </div>
 
 <div class="divider"></div>
 
 <div class="section">
-  <div class="label">Документи <span style="font-size:10px;color:#555">PDF / DOCX</span></div>
+  <div class="label"><span data-i18n="docsLabel">Документи</span> <span style="font-size:10px;color:#555">PDF / DOCX</span></div>
 
   <div class="doc-row">
     <div>
-      <div class="option-title">Виявлення чутливих даних<span class="badge">Regex</span></div>
-      <div class="option-desc">Швидке сканування за шаблонами (email, телефон, ІПН…)</div>
+      <div class="option-title"><span data-i18n="docRegexTitle">Виявлення чутливих даних</span><span class="badge">Regex</span></div>
+      <div class="option-desc" data-i18n="docRegexDesc">Швидке сканування за шаблонами (email, телефон, ІПН…)</div>
     </div>
     <label class="toggle">
       <input type="checkbox" id="doc-regex-toggle">
@@ -90,8 +99,8 @@
 
   <div class="doc-row">
     <div>
-      <div class="option-title">Виявлення чутливих даних<span class="badge">AI</span></div>
-      <div class="option-desc">Глибокий аналіз через Claude API</div>
+      <div class="option-title"><span data-i18n="docAiTitle">Виявлення чутливих даних</span><span class="badge">AI</span></div>
+      <div class="option-desc" data-i18n="docAiDesc">Глибокий аналіз через Claude API</div>
     </div>
     <label class="toggle">
       <input type="checkbox" id="doc-ai-toggle">
@@ -112,8 +121,8 @@
 
   <div class="doc-row">
     <div>
-      <div class="option-title">Заміна даних в документі</div>
-      <div class="option-desc">Редагувати PII та завантажити очищений файл</div>
+      <div class="option-title" data-i18n="docRedactTitle">Заміна даних в документі</div>
+      <div class="option-desc" data-i18n="docRedactDesc">Редагувати PII та завантажити очищений файл</div>
     </div>
     <label class="toggle">
       <input type="checkbox" id="doc-redact-toggle">
@@ -125,9 +134,9 @@
 <div class="divider"></div>
 
 <div class="section">
-  <div class="label">Розширення</div>
+  <div class="label" data-i18n="extLabel">Розширення</div>
   <div class="toggle-row">
-    <span style="font-size:13px">Активне</span>
+    <span style="font-size:13px" data-i18n="extActive">Активне</span>
     <label class="toggle">
       <input type="checkbox" id="enabled-toggle">
       <span class="slider"></span>
@@ -138,11 +147,11 @@
 <div class="divider"></div>
 
 <div class="section">
-  <div class="label">Сторінка <span class="beta">БЕТА</span></div>
+  <div class="label"><span data-i18n="pageLabel">Сторінка</span> <span class="beta">БЕТА</span></div>
   <div class="toggle-row">
     <div>
-      <div style="font-size:13px">Замінювати PII на поточному сайті</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">Приховати дані прямо в тексті сторінки</div>
+      <div style="font-size:13px" data-i18n="pageTitle">Замінювати PII на поточному сайті</div>
+      <div style="font-size:11px;color:#888;margin-top:2px" data-i18n="pageDesc">Приховати дані прямо в тексті сторінки</div>
     </div>
     <label class="toggle">
       <input type="checkbox" id="page-replace-toggle">
@@ -154,15 +163,15 @@
 <div class="divider"></div>
 
 <div class="section">
-  <div class="label">Статистика</div>
+  <div class="label" data-i18n="statsLabel">Статистика</div>
   <div class="stats-grid">
     <div class="stat-box">
       <div class="stat-num" id="stat-paste">—</div>
-      <div class="stat-lbl">PII в текстах</div>
+      <div class="stat-lbl" data-i18n="statPaste">PII в текстах</div>
     </div>
     <div class="stat-box">
       <div class="stat-num" id="stat-doc">—</div>
-      <div class="stat-lbl">PII в документах</div>
+      <div class="stat-lbl" data-i18n="statDoc">PII в документах</div>
     </div>
   </div>
 </div>
@@ -171,7 +180,7 @@
 
 <div class="section">
   <div class="tip-box">
-    <strong>💡 ПОРАДА</strong>
+    <strong data-i18n="tipLabel">💡 ПОРАДА</strong>
     <span id="ai-tip"></span>
   </div>
 </div>
