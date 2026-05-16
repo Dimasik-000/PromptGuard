@@ -170,50 +170,56 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   document.getElementById('pg-root')?.remove();
   const root = document.createElement('div');
   root.id = 'pg-root';
-  const s = root.attachShadow({ mode: 'open' });
-  s.innerHTML = `<style>
-    .ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483647;display:flex;align-items:center;justify-content:center}
-    .box{background:#1a1a1a;color:#eee;border-radius:14px;padding:24px;width:540px;max-width:90vw;font-family:system-ui;font-size:14px}
-    h3{margin:0 0 14px;color:#f5a623}
-    .lbl{color:#888;font-size:11px;margin-bottom:4px;text-transform:uppercase;display:flex;align-items:center;gap:6px}
-    .lbl-hint{color:#555;font-size:10px;font-style:italic;text-transform:none}
-    .txt{background:#2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;word-break:break-word;max-height:130px;overflow-y:auto}
-    .edit{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6;word-break:break-word;min-height:60px;max-height:140px;overflow-y:auto;width:100%;box-sizing:border-box;resize:vertical;color:#eee;font-family:system-ui;font-size:13px;}
-    .edit:focus{outline:none;border-color:#f5a623;}
-    .hi{color:#f5a623;font-weight:bold}
-    .hint{font-size:11px;color:#555;text-align:right;margin-top:-10px;margin-bottom:10px}
-    .btns{display:flex;gap:8px;justify-content:flex-end}
-    button{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}
-    .ok{background:#f5a623;color:#000}
-    .orig{background:#333;color:#eee}
-    .cancel{background:transparent;color:#888;border:1px solid #444}
-  </style>
-  <div class="ov"><div class="box">
-    <h3>🛡️ PromptGuard — знайдено ${spans.length} PII</h3>
-    <div class="lbl">Буде відправлено: <span class="lbl-hint">редагуйте за потреби</span></div>
-    <textarea class="edit">${esc(redacted)}</textarea>
-    <div class="lbl">Оригінал:</div>
-    <div class="txt">${esc(original)}</div>
-    <div class="hint">⌘ Shift+V — вставити без сканування</div>
-    <div class="btns">
-      <button class="cancel">Скасувати</button>
-      <button class="orig">Оригінал</button>
-      <button class="ok">✓ Відправити</button>
-    </div>
-  </div></div>`;
-  s.querySelector('.ok').onclick = () => {
-    const text = s.querySelector('.edit').value;
-    trackStats(spans.length, 'paste', spans.map(s => s.type));
+  const sh = root.attachShadow({ mode: 'open' });
+
+  const st = document.createElement('style');
+  st.textContent =
+    '.ov{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);z-index:2147483647;display:flex;align-items:center;justify-content:center}' +
+    '.box{background:#1a1a1a;color:#eee;border-radius:14px;padding:24px;width:540px;max-width:90vw;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;box-sizing:border-box}' +
+    'h3{margin:0 0 14px;color:#f5a623}' +
+    '.lbl{color:#888;font-size:11px;margin-bottom:4px;text-transform:uppercase;display:flex;align-items:center;gap:6px}' +
+    '.lbl-hint{color:#555;font-size:10px;font-style:italic;text-transform:none}' +
+    '.txt{background:#2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;word-break:break-word;max-height:130px;overflow-y:auto}' +
+    '.edit{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6;word-break:break-word;min-height:60px;max-height:140px;overflow-y:auto;width:100%;box-sizing:border-box;resize:vertical;color:#eee;font-size:13px}' +
+    '.edit:focus{outline:none;border-color:#f5a623}' +
+    '.hi{color:#f5a623;font-weight:bold}' +
+    '.hint{font-size:11px;color:#555;text-align:right;margin-top:-10px;margin-bottom:10px}' +
+    '.btns{display:flex;gap:8px;justify-content:flex-end}' +
+    'button{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}' +
+    '.ok{background:#f5a623;color:#000}' +
+    '.orig{background:#333;color:#eee}' +
+    '.cancel{background:transparent;color:#888;border:1px solid #444}';
+  sh.appendChild(st);
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML =
+    `<div class="ov"><div class="box">` +
+    `<h3>🛡️ PromptGuard — знайдено ${spans.length} PII</h3>` +
+    `<div class="lbl">Буде відправлено: <span class="lbl-hint">редагуйте за потреби</span></div>` +
+    `<textarea class="edit">${esc(redacted)}</textarea>` +
+    `<div class="lbl">Оригінал:</div>` +
+    `<div class="txt">${esc(original)}</div>` +
+    `<div class="hint">⌘ Shift+V — вставити без сканування</div>` +
+    `<div class="btns">` +
+    `<button class="cancel">Скасувати</button>` +
+    `<button class="orig">Оригінал</button>` +
+    `<button class="ok">✓ Відправити</button>` +
+    `</div></div></div>`;
+  sh.appendChild(wrap.firstElementChild);
+
+  sh.querySelector('.ok').onclick = () => {
+    const text = sh.querySelector('.edit').value;
+    trackStats(spans.length, 'paste', spans.map(sp => sp.type));
     root.remove();
     insert(text, targetEl);
     if (onSend) onSend();
   };
-  s.querySelector('.orig').onclick = () => {
+  sh.querySelector('.orig').onclick = () => {
     root.remove();
     insert(original, targetEl);
     if (onSend) onSend();
   };
-  s.querySelector('.cancel').onclick = () => root.remove();
+  sh.querySelector('.cancel').onclick = () => root.remove();
   document.body.appendChild(root);
 }
 
@@ -325,39 +331,37 @@ function showDocModal(fileName, matches, redactedText) {
   const dlBtn = redactedText
     ? `<button class="dl">⬇ Завантажити очищений .txt</button>` : '';
 
-  sh.innerHTML = `<style>
-    .ov{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2147483647;display:flex;align-items:center;justify-content:center}
-    .box{background:#1a1a1a;color:#eee;border-radius:14px;padding:24px;width:620px;max-width:92vw;max-height:82vh;font-family:system-ui;font-size:14px;display:flex;flex-direction:column;gap:12px}
-    h3{margin:0;color:#f5a623;font-size:15px}
-    .fname{color:#888;font-size:12px;margin-top:2px}
-    .list{overflow-y:auto;flex:1}
-    .hdr,.row{display:grid;grid-template-columns:90px 160px 1fr;gap:8px;padding:7px 10px;border-radius:6px;align-items:center;font-size:12px}
-    .hdr{color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px}
-    .row{background:#2a2a2a;margin-bottom:4px}
-    .sev{font-weight:700;font-size:10px}
-    .val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888}
-    .more{text-align:center;color:#555;padding:8px;font-size:12px}
-    .btns{display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
-    button{padding:9px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}
-    .ok{background:#f5a623;color:#000}
-    .dl{background:#2a2a2a;color:#f5a623;border:1px solid #f5a62366}
-    .cancel{background:transparent;color:#888;border:1px solid #444}
-  </style>
-  <div class="ov"><div class="box">
-    <div>
-      <h3>🛡️ Знайдено ${matches.length} PII в документі</h3>
-      <div class="fname">📄 ${esc(fileName)}</div>
-    </div>
-    <div class="list">
-      <div class="hdr"><span>Рівень</span><span>Тип</span><span>Значення (масковано)</span></div>
-      ${rows}${more}
-    </div>
-    <div class="btns">
-      <button class="cancel">Закрити</button>
-      ${dlBtn}
-      <button class="ok">Зрозумів</button>
-    </div>
-  </div></div>`;
+  const st = document.createElement('style');
+  st.textContent =
+    '.ov{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.7);z-index:2147483647;display:flex;align-items:center;justify-content:center}' +
+    '.box{background:#1a1a1a;color:#eee;border-radius:14px;padding:24px;width:620px;max-width:92vw;max-height:82vh;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}' +
+    'h3{margin:0;color:#f5a623;font-size:15px}' +
+    '.fname{color:#888;font-size:12px;margin-top:2px}' +
+    '.list{overflow-y:auto;flex:1}' +
+    '.hdr,.row{display:grid;grid-template-columns:90px 160px 1fr;gap:8px;padding:7px 10px;border-radius:6px;align-items:center;font-size:12px}' +
+    '.hdr{color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px}' +
+    '.row{background:#2a2a2a;margin-bottom:4px}' +
+    '.sev{font-weight:700;font-size:10px}' +
+    '.val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888}' +
+    '.more{text-align:center;color:#555;padding:8px;font-size:12px}' +
+    '.btns{display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}' +
+    'button{padding:9px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}' +
+    '.ok{background:#f5a623;color:#000}' +
+    '.dl{background:#2a2a2a;color:#f5a623;border:1px solid #f5a62366}' +
+    '.cancel{background:transparent;color:#888;border:1px solid #444}';
+  sh.appendChild(st);
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML =
+    `<div class="ov"><div class="box">` +
+    `<div><h3>🛡️ Знайдено ${matches.length} PII в документі</h3>` +
+    `<div class="fname">📄 ${esc(fileName)}</div></div>` +
+    `<div class="list">` +
+    `<div class="hdr"><span>Рівень</span><span>Тип</span><span>Значення (масковано)</span></div>` +
+    `${rows}${more}</div>` +
+    `<div class="btns"><button class="cancel">Закрити</button>${dlBtn}<button class="ok">Зрозумів</button></div>` +
+    `</div></div>`;
+  sh.appendChild(wrap.firstElementChild);
 
   sh.querySelector('.ok').onclick    = () => root.remove();
   sh.querySelector('.cancel').onclick = () => root.remove();
