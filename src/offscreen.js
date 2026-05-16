@@ -19,6 +19,7 @@ function regexScan(text) {
   const spans = [];
   const rules = [
     [/[^\s@]+@[^\s@]+\.[a-z]{2,}/gi, 'EMAIL'],
+    [/\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi, 'ADDRESS'],
     [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
     [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],
     [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
@@ -33,6 +34,17 @@ function regexScan(text) {
   return spans;
 }
 
+function markPreservedPhones(spans, keep = 2) {
+  let kept = 0;
+  return spans.map(s => {
+    if (s.type === 'PHONE' && kept < keep) {
+      kept += 1;
+      return { ...s, preserve: true };
+    }
+    return s;
+  });
+}
+
 function merge(spans) {
   return spans.sort((a,b)=>a.start-b.start).reduce((acc,s)=>{
     if (acc.length && s.start < acc[acc.length-1].end) return acc;
@@ -42,7 +54,15 @@ function merge(spans) {
 
 function redact(text, spans) {
   let out = '', i = 0;
-  for (const s of spans) { out += text.slice(i, s.start) + `[REDACTED_${s.type}]`; i = s.end; }
+  for (const s of spans) {
+    if (s.preserve) {
+      out += text.slice(i, s.end);
+      i = s.end;
+      continue;
+    }
+    out += text.slice(i, s.start) + `[REDACTED_${s.type}]`;
+    i = s.end;
+  }
   return out + text.slice(i);
 }
 
@@ -95,6 +115,9 @@ const DOC_PATTERNS = [
   { name: 'Email',
     severity: 'medium',
     re: /\b[A-Za-z0-9._%+\-]{2,}@[A-Za-z0-9.\-]{2,}\.[A-Za-z]{2,}\b/g },
+  { name: 'Address',
+    severity: 'medium',
+    re: /\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi },
   // Phone: specifically Ukrainian +380XX or 0XX formats
   { name: 'Телефон',
     severity: 'medium',
@@ -245,7 +268,7 @@ chrome.runtime.onMessage.addListener((msg, _, respond) => {
       const model    = await getModel();
       const nerOut   = await model(msg.text, { aggregation_strategy: 'simple' });
       const nerSpans = nerOut.map(e => ({ start: e.start, end: e.end, type: e.entity_group }));
-      const all      = merge([...regexScan(msg.text), ...nerSpans]);
+      const all      = markPreservedPhones(merge([...regexScan(msg.text), ...nerSpans]));
       respond({ redacted: redact(msg.text, all), spans: all });
     })();
     return true;

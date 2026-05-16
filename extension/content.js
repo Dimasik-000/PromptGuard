@@ -1,8 +1,69 @@
 console.log('[PromptGuard] loaded v2.0.0');
 
-let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false };
+const MODAL_STRINGS = {
+  uk: {
+    pasteTitle:   'знайдено',
+    piiLabel:     'PII',
+    chipsLabel:   'Знахідки — клікни щоб залишити оригінал:',
+    phonePolicyHint: 'Перші 2 телефони залишаються без змін',
+    willSend:     'Буде відправлено:',
+    editHint:     'редагуйте за потреби',
+    originalLabel:'Оригінал:',
+    bypassHint:   '⌘ Shift+V — вставити без сканування',
+    cancel:       'Скасувати',
+    sendOriginal: 'Оригінал',
+    send:         '✓ Відправити',
+    toastAuto:    'PII замінено',
+    toastPage:    'Сторінка: замінено',
+    toastNone:    'PII не знайдено',
+    docTitle:     'Знайдено',
+    docPii:       'PII в документі',
+    colLevel:     'Рівень',
+    colType:      'Тип',
+    colValue:     'Значення (масковано)',
+    moreFindings: 'і ще',
+    findings:     'знахідок',
+    close:        'Закрити',
+    understood:   'Зрозумів',
+    download:     '⬇ Завантажити очищений .txt',
+    sev: { critical: 'КРИТИЧНО', high: 'ВИСОКИЙ', medium: 'СЕРЕДНІЙ', low: 'НИЗЬКИЙ' },
+  },
+  en: {
+    pasteTitle:   'found',
+    piiLabel:     'PII',
+    chipsLabel:   'Findings — click to keep original:',
+    phonePolicyHint: 'First 2 phone numbers stay unchanged',
+    willSend:     'Will be sent:',
+    editHint:     'edit if needed',
+    originalLabel:'Original:',
+    bypassHint:   '⌘ Shift+V — paste without scanning',
+    cancel:       'Cancel',
+    sendOriginal: 'Original',
+    send:         '✓ Send',
+    toastAuto:    'PII replaced',
+    toastPage:    'Page: replaced',
+    toastNone:    'no PII found',
+    docTitle:     'Found',
+    docPii:       'PII in document',
+    colLevel:     'Level',
+    colType:      'Type',
+    colValue:     'Value (masked)',
+    moreFindings: 'and',
+    findings:     'more findings',
+    close:        'Close',
+    understood:   'OK',
+    download:     '⬇ Download clean .txt',
+    sev: { critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW' },
+  },
+};
 
-chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false }, (s) => {
+function mt() { return MODAL_STRINGS[settings.lang] || MODAL_STRINGS.uk; }
+
+const DEFAULT_LANG = (navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'uk';
+
+let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG };
+
+chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG }, (s) => {
   settings = s;
   console.log('[PromptGuard] settings:', settings);
   if (settings.pageReplace) applyPageReplace();
@@ -39,8 +100,9 @@ document.addEventListener('paste', (e) => {
     return;
   }
 
-  const spans = regexScan(text);
-  if (spans.length === 0) {
+  const spans = markPreservedPhones(regexScan(text));
+  const redactableCount = spans.filter(s => !s.preserve).length;
+  if (redactableCount === 0) {
     console.log('[PromptGuard] no PII');
     return;
   }
@@ -55,7 +117,8 @@ document.addEventListener('paste', (e) => {
 
   if (settings.mode === 'auto') {
     insert(redacted, targetEl);
-    showToast(`🛡️ ${spans.length} PII замінено`);
+    trackStats(spans.length, 'paste', spans.map(s => s.type));
+    showToast(`🛡️ ${spans.length} ${mt().toastAuto}`);
   } else {
     showModal(text, redacted, spans, targetEl, () => fireEnter(targetEl));
   }
@@ -86,8 +149,9 @@ document.addEventListener('keydown', (e) => {
   const raw = el.isContentEditable ? (el.innerText || el.textContent || '') : el.value;
   if (raw.trim().length < 3) return;
 
-  const spans = regexScan(raw);
-  if (!spans.length) return;
+  const spans = markPreservedPhones(regexScan(raw));
+  const redactableCount = spans.filter(s => !s.preserve).length;
+  if (!redactableCount) return;
 
   e.preventDefault();
   e.stopImmediatePropagation();
@@ -97,7 +161,7 @@ document.addEventListener('keydown', (e) => {
   if (settings.mode === 'auto') {
     insert(redacted, el);
     trackStats(spans.length, 'paste', spans.map(s => s.type));
-    showToast(`🛡️ ${spans.length} PII замінено`);
+    showToast(`🛡️ ${spans.length} ${mt().toastAuto}`);
     fireEnter(el);
   } else {
     showModal(raw, redacted, spans, el, () => fireEnter(el));
@@ -107,12 +171,13 @@ document.addEventListener('keydown', (e) => {
 function regexScan(text) {
   const spans = [];
   const rules = [
+    [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],   // CC before PHONE so it wins on equal-length matches
     [/[\w.+-]+@[\w-]+\.[a-z]{2,}/gi, 'EMAIL'],
+    [/\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi, 'ADDRESS'],
     [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
     [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
     [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
     [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'IP'],
-    [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],
   ];
   for (const [re, type] of rules) {
     re.lastIndex = 0;
@@ -120,12 +185,36 @@ function regexScan(text) {
     while ((m = re.exec(text)) !== null)
       spans.push({ start: m.index, end: m.index + m[0].length, type });
   }
-  return spans.sort((a, b) => a.start - b.start);
+  // Sort by start; on overlap keep the longer match (CC beats PHONE, etc.)
+  spans.sort((a, b) => a.start - b.start);
+  return spans.reduce((acc, s) => {
+    if (!acc.length) { acc.push(s); return acc; }
+    const last = acc[acc.length - 1];
+    if (s.start >= last.end) { acc.push(s); return acc; }
+    if ((s.end - s.start) > (last.end - last.start)) acc[acc.length - 1] = s;
+    return acc;
+  }, []);
+}
+
+function markPreservedPhones(spans, keep = 2) {
+  let kept = 0;
+  return spans.map(s => {
+    if (s.type === 'PHONE' && kept < keep) {
+      kept += 1;
+      return { ...s, preserve: true };
+    }
+    return s;
+  });
 }
 
 function redact(text, spans) {
   let out = '', i = 0;
   for (const s of spans) {
+    if (s.preserve) {
+      out += text.slice(i, s.end);
+      i = s.end;
+      continue;
+    }
     out += text.slice(i, s.start) + `[REDACTED_${s.type}]`;
     i = s.end;
   }
@@ -171,6 +260,25 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   const root = document.createElement('div');
   root.id = 'pg-root';
   const sh = root.attachShadow({ mode: 'open' });
+  const T = mt();
+
+  const chipState = spans.map(s => !s.preserve); // true = redact, false = keep original
+
+  function maskChip(v) {
+    if (v.length <= 4) return '***';
+    return v.slice(0, 2) + '…' + v.slice(-2);
+  }
+
+  function buildText() {
+    let out = '', i = 0;
+    for (let idx = 0; idx < spans.length; idx++) {
+      const s = spans[idx];
+      out += original.slice(i, s.start);
+      out += chipState[idx] ? `[REDACTED_${s.type}]` : original.slice(s.start, s.end);
+      i = s.end;
+    }
+    return out + original.slice(i);
+  }
 
   const st = document.createElement('style');
   st.textContent =
@@ -179,10 +287,12 @@ function showModal(original, redacted, spans, targetEl, onSend) {
     'h3{margin:0 0 14px;color:#f5a623}' +
     '.lbl{color:#888;font-size:11px;margin-bottom:4px;text-transform:uppercase;display:flex;align-items:center;gap:6px}' +
     '.lbl-hint{color:#555;font-size:10px;font-style:italic;text-transform:none}' +
+    '.chips{margin-bottom:12px;line-height:2.2}' +
+    '.chip{display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;cursor:pointer;margin:2px 3px;background:#2a2a2a;color:#555;border:1px solid #444;transition:.15s;font-family:monospace;user-select:none}' +
+    '.chip.on{background:#2d1c00;color:#f5a623;border-color:#f5a623}' +
     '.txt{background:#2a2a2a;border-radius:8px;padding:12px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;word-break:break-word;max-height:130px;overflow-y:auto}' +
     '.edit{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:8px;padding:12px;margin-bottom:14px;line-height:1.6;word-break:break-word;min-height:60px;max-height:140px;overflow-y:auto;width:100%;box-sizing:border-box;resize:vertical;color:#eee;font-size:13px}' +
     '.edit:focus{outline:none;border-color:#f5a623}' +
-    '.hi{color:#f5a623;font-weight:bold}' +
     '.hint{font-size:11px;color:#555;text-align:right;margin-top:-10px;margin-bottom:10px}' +
     '.btns{display:flex;gap:8px;justify-content:flex-end}' +
     'button{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500}' +
@@ -191,25 +301,42 @@ function showModal(original, redacted, spans, targetEl, onSend) {
     '.cancel{background:transparent;color:#888;border:1px solid #444}';
   sh.appendChild(st);
 
+  const chips = spans.map((s, i) => {
+    const raw = original.slice(s.start, s.end);
+    return `<span class="chip on" data-idx="${i}">[${s.type}] ${maskChip(raw)}</span>`;
+  }).join('');
+
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<h3>🛡️ PromptGuard — знайдено ${spans.length} PII</h3>` +
-    `<div class="lbl">Буде відправлено: <span class="lbl-hint">редагуйте за потреби</span></div>` +
-    `<textarea class="edit">${esc(redacted)}</textarea>` +
-    `<div class="lbl">Оригінал:</div>` +
+    `<h3>🛡️ PromptGuard — ${T.pasteTitle} ${spans.length} ${T.piiLabel}</h3>` +
+    `<div class="lbl">${T.chipsLabel} <span class="lbl-hint">${T.phonePolicyHint}</span></div>` +
+    `<div class="chips">${chips}</div>` +
+    `<div class="lbl">${T.willSend} <span class="lbl-hint">${T.editHint}</span></div>` +
+    `<textarea class="edit">${esc(buildText())}</textarea>` +
+    `<div class="lbl">${T.originalLabel}</div>` +
     `<div class="txt">${esc(original)}</div>` +
-    `<div class="hint">⌘ Shift+V — вставити без сканування</div>` +
+    `<div class="hint">${T.bypassHint}</div>` +
     `<div class="btns">` +
-    `<button class="cancel">Скасувати</button>` +
-    `<button class="orig">Оригінал</button>` +
-    `<button class="ok">✓ Відправити</button>` +
+    `<button class="cancel">${T.cancel}</button>` +
+    `<button class="orig">${T.sendOriginal}</button>` +
+    `<button class="ok">${T.send}</button>` +
     `</div></div></div>`;
   sh.appendChild(wrap.firstElementChild);
 
+  sh.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const idx = parseInt(chip.dataset.idx, 10);
+      chipState[idx] = !chipState[idx];
+      chip.className = 'chip' + (chipState[idx] ? ' on' : '');
+      sh.querySelector('.edit').value = buildText();
+    });
+  });
+
   sh.querySelector('.ok').onclick = () => {
     const text = sh.querySelector('.edit').value;
-    trackStats(spans.length, 'paste', spans.map(sp => sp.type));
+    const redactedCount = chipState.filter(Boolean).length;
+    trackStats(redactedCount, 'paste', spans.filter((_, i) => chipState[i]).map(sp => sp.type));
     root.remove();
     insert(text, targetEl);
     if (onSend) onSend();
@@ -224,7 +351,6 @@ function showModal(original, redacted, spans, targetEl, onSend) {
 }
 
 function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function hl(t) { return esc(t).replace(/\[REDACTED_\w+\]/g, m => `<span class="hi">${m}</span>`); }
 
 function trackStats(count, type, piiTypes = []) {
   chrome.storage.local.get({ pasteRedacted: 0, docRedacted: 0 }, (s) => {
@@ -250,14 +376,14 @@ function applyPageReplace() {
   let total = 0, node;
   const batch = [];
   while ((node = walker.nextNode())) {
-    const spans = regexScan(node.textContent);
+    const spans = markPreservedPhones(regexScan(node.textContent));
     if (spans.length) batch.push({ node, spans });
   }
   for (const { node, spans } of batch) {
     node.textContent = redact(node.textContent, spans);
     total += spans.length;
   }
-  if (total) showToast(`🛡️ Сторінка: замінено ${total} PII`);
+  if (total) showToast(`🛡️ ${mt().toastPage} ${total} ${mt().piiLabel}`);
 }
 
 // ── Сканування документів ──────────────────────────────────────────────────
@@ -281,7 +407,7 @@ window.addEventListener('message', (e) => {
 });
 
 function scanDoc(fileName, ext, b64) {
-  const toast = makeStickyToast(`🔍 Сканую ${fileName}…`);
+  const toast = makeStickyToast(`🔍 ${fileName}…`);
   chrome.runtime.sendMessage(
     {
       type: 'SCAN_DOC',
@@ -294,7 +420,7 @@ function scanDoc(fileName, ext, b64) {
       toast.remove();
       if (chrome.runtime.lastError || !res) return;
       if (res.error) { showToast(`⚠️ ${res.error}`); return; }
-      if (!res.matches.length) { showToast(`✅ ${fileName} — PII не знайдено`); return; }
+      if (!res.matches.length) { showToast(`✅ ${fileName} — ${mt().toastNone}`); return; }
       trackStats(res.matches.length, 'doc', res.matches.map(m => m.pattern));
       showDocModal(fileName, res.matches, settings.docRedact ? res.redactedText : null);
     }
@@ -314,22 +440,22 @@ function showDocModal(fileName, matches, redactedText) {
   const root = document.createElement('div');
   root.id = 'pg-doc-root';
   const sh = root.attachShadow({ mode: 'open' });
+  const T = mt();
 
   const SEV_COLOR = { critical: '#ff4444', high: '#ff8c00', medium: '#f5a623', low: '#888' };
-  const SEV_LABEL = { critical: 'КРИТИЧНО', high: 'ВИСОКИЙ', medium: 'СЕРЕДНІЙ', low: 'НИЗЬКИЙ' };
 
   const rows = matches.slice(0, 30).map(m => `
     <div class="row">
-      <span class="sev" style="color:${SEV_COLOR[m.severity] || '#888'}">${SEV_LABEL[m.severity] || m.severity}</span>
+      <span class="sev" style="color:${SEV_COLOR[m.severity] || '#888'}">${T.sev[m.severity] || m.severity}</span>
       <span class="pat">${esc(m.pattern)}</span>
       <span class="val" title="${esc(m.value)}">${esc(m.value)}</span>
     </div>`).join('');
 
   const more = matches.length > 30
-    ? `<div class="more">… і ще ${matches.length - 30} знахідок</div>` : '';
+    ? `<div class="more">… ${T.moreFindings} ${matches.length - 30} ${T.findings}</div>` : '';
 
   const dlBtn = redactedText
-    ? `<button class="dl">⬇ Завантажити очищений .txt</button>` : '';
+    ? `<button class="dl">${T.download}</button>` : '';
 
   const st = document.createElement('style');
   st.textContent =
@@ -354,12 +480,12 @@ function showDocModal(fileName, matches, redactedText) {
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<div><h3>🛡️ Знайдено ${matches.length} PII в документі</h3>` +
+    `<div><h3>🛡️ ${T.docTitle} ${matches.length} ${T.docPii}</h3>` +
     `<div class="fname">📄 ${esc(fileName)}</div></div>` +
     `<div class="list">` +
-    `<div class="hdr"><span>Рівень</span><span>Тип</span><span>Значення (масковано)</span></div>` +
+    `<div class="hdr"><span>${T.colLevel}</span><span>${T.colType}</span><span>${T.colValue}</span></div>` +
     `${rows}${more}</div>` +
-    `<div class="btns"><button class="cancel">Закрити</button>${dlBtn}<button class="ok">Зрозумів</button></div>` +
+    `<div class="btns"><button class="cancel">${T.close}</button>${dlBtn}<button class="ok">${T.understood}</button></div>` +
     `</div></div>`;
   sh.appendChild(wrap.firstElementChild);
 
