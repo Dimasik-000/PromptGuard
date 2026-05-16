@@ -4,7 +4,15 @@
   "version": "2.0.0",
   "description": "Local PII redaction for AI chats",
   "permissions": ["offscreen", "storage", "activeTab"],
-  "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*"],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://platform.openai.com/*",
+    "https://*.openai.com/*",
+    "https://gemini.google/*",
+    "https://bard.google.com/*"
+  ],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [{
     "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],

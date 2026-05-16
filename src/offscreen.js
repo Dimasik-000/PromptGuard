@@ -19,8 +19,8 @@ function regexScan(text) {
   const spans = [];
   const rules = [
     [/[^\s@]+@[^\s@]+\.[a-z]{2,}/gi, 'EMAIL'],
-    [/\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi, 'ADDRESS'],
-    [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
+    [/(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}?\s+\d+[A-Za-zА-Яа-я]?(?=[,.;:]|\s|$)/gi, 'ADDRESS'],
+    [/\+?[\d\s\-() ]{7,15}\d/g, 'PHONE'],
     [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],
     [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
     [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
@@ -117,7 +117,7 @@ const DOC_PATTERNS = [
     re: /\b[A-Za-z0-9._%+\-]{2,}@[A-Za-z0-9.\-]{2,}\.[A-Za-z]{2,}\b/g },
   { name: 'Address',
     severity: 'medium',
-    re: /\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi },
+    re: /(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}?\s+\d+[A-Za-zА-Яа-я]?(?=[,.;:]|\s|$)/gi },
   // Phone: specifically Ukrainian +380XX or 0XX formats
   { name: 'Телефон',
     severity: 'medium',

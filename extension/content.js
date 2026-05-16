@@ -59,7 +59,8 @@ const MODAL_STRINGS = {
 
 function mt() { return MODAL_STRINGS[settings.lang] || MODAL_STRINGS.uk; }
 
-const DEFAULT_LANG = (navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'uk';
+// Force English UI by default to ensure consistent experience across pages
+const DEFAULT_LANG = 'en';
 
 let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG };
 
@@ -110,7 +111,10 @@ document.addEventListener('paste', (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  const targetEl = lastInput || document.activeElement;
+  // Prefer the event's composed path to find the actual editable element (works with shadow DOM)
+  const path = (e.composedPath && e.composedPath()) || [];
+  const pathEditable = path.find(n => n && (n.isContentEditable || n.tagName === 'TEXTAREA' || n.tagName === 'INPUT'));
+  const targetEl = pathEditable || lastInput || document.activeElement;
   const redacted = redact(text, spans);
 
   console.log('[PromptGuard] mode:', settings.mode, 'spans:', spans.length);
@@ -173,8 +177,8 @@ function regexScan(text) {
   const rules = [
     [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],   // CC before PHONE so it wins on equal-length matches
     [/[\w.+-]+@[\w-]+\.[a-z]{2,}/gi, 'EMAIL'],
-    [/\b(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}\s+\d+[A-Za-zА-Яа-я]?\b/gi, 'ADDRESS'],
-    [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
+    [/(?:вул\.?|улица|street|st\.?|ave\.?|avenue|просп\.?|проспект|бульв\.?|бульвар|пров\.?|площа|square)\s+[A-Za-zА-Яа-яІіЇїЄє0-9'’.\-\s]{2,40}?\s+\d+[A-Za-zА-Яа-я]?(?=[,.;:]|\s|$)/gi, 'ADDRESS'],
+    [/\+?[\d\s\-() ]{7,15}\d/g, 'PHONE'],
     [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
     [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
     [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'IP'],
@@ -347,7 +351,8 @@ function showModal(original, redacted, spans, targetEl, onSend) {
     if (onSend) onSend();
   };
   sh.querySelector('.cancel').onclick = () => root.remove();
-  document.body.appendChild(root);
+  // Some pages (ChatGPT) use complex DOM; append to documentElement if body isn't accepting overlays
+  try { document.body.appendChild(root); } catch (e) { document.documentElement.appendChild(root); }
 }
 
 function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
