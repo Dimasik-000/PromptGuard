@@ -57,7 +57,50 @@ document.addEventListener('paste', (e) => {
     insert(redacted, targetEl);
     showToast(`🛡️ ${spans.length} PII замінено`);
   } else {
-    showModal(text, redacted, spans, targetEl);
+    showModal(text, redacted, spans, targetEl, () => fireEnter(targetEl));
+  }
+}, true);
+
+// ── Send-time scan (auto + modal mode: also scan text typed manually) ────────
+let pgSending = false;
+
+function fireEnter(el) {
+  pgSending = true;
+  setTimeout(() => {
+    el.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true, composed: true,
+    }));
+    pgSending = false;
+  }, 80);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (pgSending) return;
+  if (!settings.enabled) return;
+  if (e.key !== 'Enter' || e.shiftKey) return;
+
+  const el = lastInput || document.activeElement;
+  if (!el || (!el.isContentEditable && el.tagName !== 'TEXTAREA')) return;
+
+  const raw = el.isContentEditable ? (el.innerText || el.textContent || '') : el.value;
+  if (raw.trim().length < 3) return;
+
+  const spans = regexScan(raw);
+  if (!spans.length) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+
+  const redacted = redact(raw, spans);
+
+  if (settings.mode === 'auto') {
+    insert(redacted, el);
+    trackStats(spans.length, 'paste', spans.map(s => s.type));
+    showToast(`🛡️ ${spans.length} PII замінено`);
+    fireEnter(el);
+  } else {
+    showModal(raw, redacted, spans, el, () => fireEnter(el));
   }
 }, true);
 
@@ -123,7 +166,7 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
-function showModal(original, redacted, spans, targetEl) {
+function showModal(original, redacted, spans, targetEl, onSend) {
   document.getElementById('pg-root')?.remove();
   const root = document.createElement('div');
   root.id = 'pg-root';
@@ -163,8 +206,13 @@ function showModal(original, redacted, spans, targetEl) {
     trackStats(spans.length, 'paste', spans.map(s => s.type));
     root.remove();
     insert(text, targetEl);
+    if (onSend) onSend();
   };
-  s.querySelector('.orig').onclick = () => { root.remove(); insert(original, targetEl); };
+  s.querySelector('.orig').onclick = () => {
+    root.remove();
+    insert(original, targetEl);
+    if (onSend) onSend();
+  };
   s.querySelector('.cancel').onclick = () => root.remove();
   document.body.appendChild(root);
 }
