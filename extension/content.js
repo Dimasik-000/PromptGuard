@@ -61,7 +61,6 @@ let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true
 
 chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: 'uk' }, (s) => {
   settings = s;
-  console.log('[PromptGuard] settings:', settings);
   if (settings.pageReplace) applyPageReplace();
 });
 
@@ -71,20 +70,45 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.pageReplace?.newValue) applyPageReplace();
 });
 
+// ── Input tracking (shadow DOM aware) ─────────────────────────────────────────
 let lastInput = null;
-document.addEventListener('focusin', (e) => {
-  if (e.target.isContentEditable || e.target.tagName === 'TEXTAREA') {
-    lastInput = e.target;
-  }
-});
 
+document.addEventListener('focusin', (e) => {
+  const el = inputFromPath(e.composedPath ? e.composedPath() : [e.target]);
+  if (el) lastInput = el;
+}, true);
+
+function inputFromPath(path) {
+  for (const n of path) {
+    if (n && n.nodeType === 1 && (n.isContentEditable || n.tagName === 'TEXTAREA')) return n;
+  }
+  return null;
+}
+
+// Walk into shadow roots to find the truly active element
+function deepActiveElement() {
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+    el = el.shadowRoot.activeElement;
+  }
+  return el;
+}
+
+function getInput(event) {
+  if (event) {
+    const fromPath = inputFromPath(event.composedPath ? event.composedPath() : []);
+    if (fromPath) return fromPath;
+  }
+  return lastInput || deepActiveElement();
+}
+
+// ── Paste intercept ────────────────────────────────────────────────────────────
 document.addEventListener('paste', (e) => {
   const bypassMap = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey };
   if ((e.metaKey || e.ctrlKey) && bypassMap[settings.shortcut]) return;
 
   const text = e.clipboardData?.getData('text');
-  if (!text || text.length < 3) return;
-  if (!settings.enabled) return;
+  if (!text || text.length < 3 || !settings.enabled) return;
 
   const spans = regexScan(text);
   if (!spans.length) return;
@@ -92,7 +116,7 @@ document.addEventListener('paste', (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  const targetEl = lastInput || document.activeElement;
+  const targetEl = getInput(e);
   const redacted = redact(text, spans);
 
   if (settings.mode === 'auto') {
@@ -104,7 +128,7 @@ document.addEventListener('paste', (e) => {
   }
 }, true);
 
-// ── Send-time scan (intercept Enter to check typed text) ─────────────────────
+// ── Send-time scan ─────────────────────────────────────────────────────────────
 let pgSending = false;
 
 function fireEnter(el) {
@@ -118,12 +142,20 @@ function fireEnter(el) {
   }, 80);
 }
 
+function fireClick(btn) {
+  pgSending = true;
+  setTimeout(() => {
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+    pgSending = false;
+  }, 80);
+}
+
+// Intercept Enter key (works for both Claude and ChatGPT)
 document.addEventListener('keydown', (e) => {
-  if (pgSending) return;
-  if (!settings.enabled) return;
+  if (pgSending || !settings.enabled) return;
   if (e.key !== 'Enter' || e.shiftKey) return;
 
-  const el = lastInput || document.activeElement;
+  const el = getInput(e);
   if (!el || (!el.isContentEditable && el.tagName !== 'TEXTAREA')) return;
 
   const raw = el.isContentEditable ? (el.innerText || el.textContent || '') : el.value;
@@ -136,7 +168,6 @@ document.addEventListener('keydown', (e) => {
   e.stopImmediatePropagation();
 
   const redacted = redact(raw, spans);
-
   if (settings.mode === 'auto') {
     insert(redacted, el);
     trackStats(spans.length, 'paste', spans.map(s => s.type));
@@ -147,27 +178,99 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
+// Returns true if btn and inputEl share a common ancestor within `depth` levels up from btn
+function nearInput(btn, inputEl, depth) {
+  if (!btn || !inputEl) return false;
+  let p = btn.parentElement;
+  for (let i = 0; i < depth; i++) {
+    if (!p) return false;
+    if (p.contains(inputEl)) return true;
+    p = p.parentElement;
+  }
+  return false;
+}
+
+// Intercept send-button clicks (ChatGPT and Claude both have send buttons)
+document.addEventListener('click', (e) => {
+  if (pgSending || !settings.enabled) return;
+
+  const path = e.composedPath ? e.composedPath() : [];
+  const btn = path.find(n => n && n.tagName === 'BUTTON');
+  if (!btn) return;
+
+  // Only intercept buttons that look like "send" buttons
+  const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+  const testId    = (btn.getAttribute('data-testid') || '').toLowerCase();
+  const isSend =
+    btn.type === 'submit' ||
+    ariaLabel.includes('send') || ariaLabel.includes('відправити') || ariaLabel.includes('submit') ||
+    testId.includes('send') || testId.includes('submit') ||
+    // ChatGPT: SVG-only button with no label — check it shares a container with lastInput
+    nearInput(btn, lastInput || deepActiveElement(), 8);
+
+  if (!isSend) return;
+
+  const el = lastInput || deepActiveElement();
+  if (!el || (!el.isContentEditable && el.tagName !== 'TEXTAREA')) return;
+
+  const raw = el.isContentEditable ? (el.innerText || el.textContent || '') : el.value;
+  if (raw.trim().length < 3) return;
+
+  const spans = regexScan(raw);
+  if (!spans.length) return;
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+
+  const redacted = redact(raw, spans);
+  if (settings.mode === 'auto') {
+    insert(redacted, el);
+    trackStats(spans.length, 'paste', spans.map(s => s.type));
+    showToast(`🛡️ ${spans.length} ${mt().toastAuto}`);
+    fireClick(btn);
+  } else {
+    showModal(raw, redacted, spans, el, () => fireClick(btn));
+  }
+}, true);
+
+// ── PII detection ──────────────────────────────────────────────────────────────
 function regexScan(text) {
   const spans = [];
   const rules = [
-    [/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, 'CC'],
-    [/[\w.+-]+@[\w-]+\.[a-z]{2,}/gi, 'EMAIL'],
-    [/\+?[\d\s\-(). ]{7,15}\d/g, 'PHONE'],
-    [/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, 'JWT'],
-    [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
+    // Credit card: 16 digits in 4 groups (spaces, dashes, or none)
+    [/\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g, 'CC'],
+
+    // Email: normal AND obfuscated variants:
+    //   user@gmail.com  |  user @ gmail . com  |  user[at]gmail[dot]com  |  user (at) gmail (dot) com
+    [/[\w.+\-]+\s*(?:@|\[at\]|\(at\))\s*[\w\-]+(?:\s*(?:\.|\[dot\]|\(dot\))\s*[\w\-]+)*\s*(?:\.|\[dot\]|\(dot\))\s*[a-z]{2,}/gi, 'EMAIL'],
+
+    // JWT token (before IP to avoid partial matches)
+    [/eyJ[\w\-]+\.eyJ[\w\-]+\.[\w\-]+/g, 'JWT'],
+
+    // IPv4 address — BEFORE PHONE so IP wins when same span length
     [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'IP'],
+
+    // Phone: digits optionally separated by spaces, dashes, parens (not dot, to avoid IP conflict)
+    [/\+?[\d][\d\s\-()\-]{5,14}\d/g, 'PHONE'],
+
+    // AWS access key
+    [/AKIA[0-9A-Z]{16}/g, 'AWS_KEY'],
   ];
+
   for (const [re, type] of rules) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(text)) !== null)
       spans.push({ start: m.index, end: m.index + m[0].length, type });
   }
+
+  // Sort by start; on overlap keep the longer match (CC beats PHONE)
   spans.sort((a, b) => a.start - b.start);
   return spans.reduce((acc, s) => {
     if (!acc.length) { acc.push(s); return acc; }
     const last = acc[acc.length - 1];
     if (s.start >= last.end) { acc.push(s); return acc; }
+    // Overlapping: keep the longer one
     if ((s.end - s.start) > (last.end - last.start)) acc[acc.length - 1] = s;
     return acc;
   }, []);
@@ -182,8 +285,9 @@ function redact(text, spans) {
   return out + text.slice(i);
 }
 
+// ── DOM helpers ────────────────────────────────────────────────────────────────
 function insert(text, el) {
-  el = el || document.activeElement;
+  el = el || deepActiveElement();
   if (!el) return;
   if (el.isContentEditable) {
     el.focus();
@@ -194,12 +298,12 @@ function insert(text, el) {
     sel.addRange(range);
     sel.deleteFromDocument();
     const node = document.createTextNode(text);
-    const range2 = document.createRange();
-    range2.setStart(el, 0);
-    range2.collapse(true);
+    const r2 = document.createRange();
+    r2.setStart(el, 0);
+    r2.collapse(true);
     sel.removeAllRanges();
-    sel.addRange(range2);
-    range2.insertNode(node);
+    sel.addRange(r2);
+    r2.insertNode(node);
     sel.collapseToEnd();
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
@@ -216,6 +320,7 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
+// ── Modal (with per-chip selective redaction) ──────────────────────────────────
 function showModal(original, redacted, spans, targetEl, onSend) {
   document.getElementById('pg-root')?.remove();
   const root = document.createElement('div');
@@ -223,8 +328,7 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   const sh = root.attachShadow({ mode: 'open' });
   const T = mt();
 
-  // All spans start as "redact" (on). User can click to keep original.
-  const chipState = spans.map(() => true);
+  const chipState = spans.map(() => true); // true = redact
 
   function maskChip(v) {
     if (v.length <= 4) return '***';
@@ -271,7 +375,7 @@ function showModal(original, redacted, spans, targetEl, onSend) {
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<h3>&#x1F6E1;&#xFE0F; PromptGuard &#x2014; ${T.pasteTitle} ${spans.length} ${T.piiLabel}</h3>` +
+    `<h3>🛡️ PromptGuard — ${T.pasteTitle} ${spans.length} ${T.piiLabel}</h3>` +
     `<div class="lbl">${T.chipsLabel}</div>` +
     `<div class="chips">${chips}</div>` +
     `<div class="lbl">${T.willSend} <span class="lbl-hint">${T.editHint}</span></div>` +
@@ -334,8 +438,9 @@ function applyPageReplace() {
       return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
     }
   });
-  let total = 0, node;
+  let total = 0;
   const batch = [];
+  let node;
   while ((node = walker.nextNode())) {
     const spans = regexScan(node.textContent);
     if (spans.length) batch.push({ node, spans });
@@ -344,11 +449,10 @@ function applyPageReplace() {
     node.textContent = redact(node.textContent, spans);
     total += spans.length;
   }
-  if (total) showToast(`\u{1F6E1}️ ${mt().toastPage} ${total} ${mt().piiLabel}`);
+  if (total) showToast(`🛡️ ${mt().toastPage} ${total} ${mt().piiLabel}`);
 }
 
-// ── Document scanning ─────────────────────────────────────────────────────────
-
+// ── Document scanning ──────────────────────────────────────────────────────────
 (function () {
   const s = document.createElement('script');
   s.src = chrome.runtime.getURL('inject.js');
@@ -364,7 +468,7 @@ window.addEventListener('message', (e) => {
 });
 
 function scanDoc(fileName, ext, b64) {
-  const toast = makeStickyToast(`\u{1F50D} ${fileName}…`);
+  const toast = makeStickyToast(`🔍 ${fileName}…`);
   chrome.runtime.sendMessage(
     {
       type: 'SCAN_DOC',
@@ -392,6 +496,7 @@ function makeStickyToast(msg) {
   return t;
 }
 
+// ── Doc modal ──────────────────────────────────────────────────────────────────
 function showDocModal(fileName, matches, redactedText) {
   document.getElementById('pg-doc-root')?.remove();
   const root = document.createElement('div');
@@ -436,8 +541,8 @@ function showDocModal(fileName, matches, redactedText) {
   const wrap = document.createElement('div');
   wrap.innerHTML =
     `<div class="ov"><div class="box">` +
-    `<div><h3>&#x1F6E1;&#xFE0F; ${T.docTitle} ${matches.length} ${T.docPii}</h3>` +
-    `<div class="fname">&#x1F4C4; ${esc(fileName)}</div></div>` +
+    `<div><h3>🛡️ ${T.docTitle} ${matches.length} ${T.docPii}</h3>` +
+    `<div class="fname">📄 ${esc(fileName)}</div></div>` +
     `<div class="list">` +
     `<div class="hdr"><span>${T.colLevel}</span><span>${T.colType}</span><span>${T.colValue}</span></div>` +
     `${rows}${more}</div>` +
