@@ -57,7 +57,7 @@ const MODAL_STRINGS = {
   },
 };
 
-function mt() { return MODAL_STRINGS[settings.lang] || MODAL_STRINGS.uk; }
+function mt() { return MODAL_STRINGS[settings?.lang] || MODAL_STRINGS[DEFAULT_LANG]; }
 
 // Force English UI by default to ensure consistent experience across pages
 const DEFAULT_LANG = 'en';
@@ -66,6 +66,8 @@ let settings = { mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true
 
 chrome.storage.sync.get({ mode: 'modal', enabled: true, shortcut: 'shift', docRegex: true, docAi: false, docRedact: false, pageReplace: false, lang: DEFAULT_LANG }, (s) => {
   settings = s;
+  // Force UI language to DEFAULT_LANG to ensure consistent English strings
+  settings.lang = DEFAULT_LANG;
   console.log('[PromptGuard] settings:', settings);
   if (settings.pageReplace) applyPageReplace();
 });
@@ -81,9 +83,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 let lastInput = null;
 document.addEventListener('focusin', (e) => {
-  if (e.target.isContentEditable || e.target.tagName === 'TEXTAREA') {
-    lastInput = e.target;
-  }
+  const t = e.target;
+  if (!t) return;
+  try {
+    if (t.nodeType === 1 && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || (t.getAttribute && (t.getAttribute('role') === 'textbox' || (t.matches && t.matches('[contenteditable], [role="textbox"], textarea, input')))))) {
+      lastInput = t;
+    }
+  } catch (err) { /* some nodes may throw on matches(); ignore */ }
 });
 
 document.addEventListener('paste', (e) => {
@@ -113,7 +119,12 @@ document.addEventListener('paste', (e) => {
 
   // Prefer the event's composed path to find the actual editable element (works with shadow DOM)
   const path = (e.composedPath && e.composedPath()) || [];
-  const pathEditable = path.find(n => n && (n.isContentEditable || n.tagName === 'TEXTAREA' || n.tagName === 'INPUT'));
+  const pathEditable = path.find(n => {
+    if (!n || n.nodeType !== 1) return false;
+    try {
+      return n.isContentEditable || n.tagName === 'TEXTAREA' || n.tagName === 'INPUT' || (n.getAttribute && (n.getAttribute('role') === 'textbox' || (n.matches && n.matches('[contenteditable], [role="textbox"], textarea, input'))));
+    } catch (err) { return false; }
+  });
   const targetEl = pathEditable || lastInput || document.activeElement;
   const redacted = redact(text, spans);
 
